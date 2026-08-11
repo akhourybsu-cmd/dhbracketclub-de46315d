@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClub } from '@/contexts/ClubContext';
 import { useClubAssets } from '@/hooks/useClubAssets';
-import { buildLeaderboard, computeExerciseProgress } from '@/lib/workout/scoring';
-import { formatValueShort } from '@/lib/workout/measurement';
+import { buildLeaderboard, computeExerciseProgress, computeWeeklyAwards } from '@/lib/workout/scoring';
+import { formatValue, formatValueShort } from '@/lib/workout/measurement';
 import type { WorkoutWeek, WeekExerciseWithDef, WorkoutActivity } from '@/lib/workout/types';
 
 const sb = supabase as any;
@@ -53,6 +53,10 @@ export default function WorkoutRecapPage() {
   useEffect(() => { setLoading(true); load(); }, [load]);
 
   const leaderboard = useMemo(() => buildLeaderboard(weekExercises, activities), [weekExercises, activities]);
+  const awards = useMemo(
+    () => week ? computeWeeklyAwards(week, weekExercises, activities, formatValue) : [],
+    [week, weekExercises, activities],
+  );
   const myRow = leaderboard.find(r => r.userId === user?.id);
   const myActivities = useMemo(() => activities.filter(a => a.user_id === user?.id), [activities, user?.id]);
 
@@ -98,6 +102,30 @@ export default function WorkoutRecapPage() {
           </div>
         )}
       </div>
+
+      {/* Awards */}
+      {awards.length > 0 && (
+        <>
+          <h3 className="section-header mb-2">Awards</h3>
+          <div className="grid grid-cols-2 gap-2 mb-5">
+            {awards.map(a => {
+              const isMe = a.winnerUserId === user?.id;
+              return (
+                <div key={a.key} className="glass-card p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {a.key === 'champion'
+                      ? <Trophy className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />
+                      : <Medal className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                    <span className="text-[11px] font-extrabold uppercase tracking-[0.08em] truncate">{a.title}</span>
+                  </div>
+                  <p className="text-[13px] font-bold truncate">{isMe ? 'You' : (names.get(a.winnerUserId) || 'Member')}</p>
+                  <p className="text-[11px] text-muted-foreground/60 truncate">{a.detail}</p>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Full standings */}
       <h3 className="section-header mb-2">Final standings</h3>

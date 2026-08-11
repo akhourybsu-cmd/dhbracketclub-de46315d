@@ -84,6 +84,7 @@ export function useWorkoutAdmin(clubId: string | undefined, userId: string | und
   const createWeek = useCallback(async (
     week: { title: string; theme: string | null; starts_at: string; ends_at: string; status: WeekStatus },
     items: WeekExerciseInput[],
+    groupGoal?: { exercise_id: string; title: string; target: number } | null,
   ) => {
     if (!clubId) return;
     const { data, error: e } = await sb.from('workout_weeks')
@@ -93,6 +94,13 @@ export function useWorkoutAdmin(clubId: string | undefined, userId: string | und
       const rows = items.map(it => ({ ...it, week_id: data.id }));
       const { error: e2 } = await sb.from('workout_week_exercises').insert(rows);
       if (e2) throw e2;
+    }
+    if (groupGoal) {
+      const { error: e3 } = await sb.from('workout_group_goals').insert({
+        club_id: clubId, week_id: data.id, created_by: userId,
+        exercise_id: groupGoal.exercise_id, title: groupGoal.title, target: groupGoal.target,
+      });
+      if (e3) throw e3;
     }
     await refresh();
     return data as WorkoutWeek;

@@ -117,8 +117,8 @@ export default function WorkoutAdminPage() {
           <WeekForm
             exercises={activeExercises}
             onCancel={() => setWeekFormOpen(false)}
-            onSubmit={async (week, items) => {
-              try { await admin.createWeek(week, items); toast.success('Competition week created'); setWeekFormOpen(false); }
+            onSubmit={async (week, items, groupGoal) => {
+              try { await admin.createWeek(week, items, groupGoal); toast.success('Competition week created'); setWeekFormOpen(false); }
               catch { toast.error('Could not create week'); }
             }}
           />
@@ -184,6 +184,7 @@ function WeekForm({
   onSubmit: (
     week: { title: string; theme: string | null; starts_at: string; ends_at: string; status: WeekStatus },
     items: WeekExerciseInput[],
+    groupGoal?: { exercise_id: string; title: string; target: number } | null,
   ) => Promise<void> | void;
   onCancel: () => void;
 }) {
@@ -193,6 +194,11 @@ function WeekForm({
   const [end, setEnd] = useState(() => toLocalInput(new Date(Date.now() + 7 * 86400000)));
   const [saving, setSaving] = useState(false);
   const [picked, setPicked] = useState<Record<string, { on: boolean; goal: string }>>({});
+  // Optional collaborative group goal.
+  const [ggOn, setGgOn] = useState(false);
+  const [ggExercise, setGgExercise] = useState('');
+  const [ggTitle, setGgTitle] = useState('');
+  const [ggTarget, setGgTarget] = useState('');
 
   const toggle = (ex: WorkoutExercise) => setPicked(p => {
     const cur = p[ex.id];
@@ -215,9 +221,17 @@ function WeekForm({
         const goal = isFinite(raw) && raw > 0 ? (isTime ? raw * 60 : raw) : null;
         return { exercise_id: ex.id, goal, scoring_config: {}, sort_order: i };
       });
+      let groupGoal: { exercise_id: string; title: string; target: number } | null = null;
+      if (ggOn && ggExercise && ggTitle.trim() && parseFloat(ggTarget) > 0) {
+        const ex = chosen.find(e => e.id === ggExercise);
+        const isTime = ex ? MEASUREMENT_META[ex.measurement_type].isTime : false;
+        const t = parseFloat(ggTarget);
+        groupGoal = { exercise_id: ggExercise, title: ggTitle.trim(), target: isTime ? t * 60 : t };
+      }
       await onSubmit(
         { title: title.trim(), theme: theme.trim() || null, starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString(), status: 'upcoming' },
         items,
+        groupGoal,
       );
     } finally { setSaving(false); }
   };
@@ -260,6 +274,37 @@ function WeekForm({
             );
           })}
         </div>
+      </div>
+
+      {/* Optional club group goal */}
+      <div className="rounded-xl border border-border/20 p-3">
+        <button onClick={() => setGgOn(v => !v)} className="w-full flex items-center justify-between">
+          <span className="text-[13px] font-bold text-foreground/85">Add a club group goal</span>
+          <span className={cn('w-11 h-6 rounded-full transition-colors relative flex-shrink-0', ggOn ? 'bg-primary' : 'bg-muted/60')}>
+            <span className={cn('absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform', ggOn ? 'translate-x-[22px]' : 'translate-x-0.5')} />
+          </span>
+        </button>
+        {ggOn && (
+          <div className="mt-3 space-y-2.5">
+            {chosen.length === 0 ? (
+              <p className="text-[12px] text-muted-foreground/60">Pick at least one workout above first.</p>
+            ) : (
+              <>
+                <select className={inputCls} value={ggExercise} onChange={e => setGgExercise(e.target.value)}>
+                  <option value="">Choose a workout…</option>
+                  {chosen.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                </select>
+                <input className={inputCls} value={ggTitle} onChange={e => setGgTitle(e.target.value)} placeholder="e.g. 10,000 squats together" />
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} className={cn(inputCls, 'w-40')} value={ggTarget} onChange={e => setGgTarget(e.target.value)} placeholder="Combined target" />
+                  <span className="text-[12px] font-bold text-muted-foreground/55">
+                    {(() => { const ex = chosen.find(e => e.id === ggExercise); return ex && MEASUREMENT_META[ex.measurement_type].isTime ? 'min (combined)' : 'combined'; })()}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2.5 pt-2">

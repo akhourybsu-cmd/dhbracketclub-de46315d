@@ -128,6 +128,23 @@ export interface WeekExerciseWithDef extends WorkoutWeekExercise {
   exercise: WorkoutExercise;
 }
 
+export interface WorkoutGroupGoal {
+  id: string;
+  club_id: string;
+  week_id: string;
+  exercise_id: string;
+  title: string;
+  target: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A group goal joined with its exercise definition. */
+export interface GroupGoalWithDef extends WorkoutGroupGoal {
+  exercise: WorkoutExercise;
+}
+
 export type ActivitySource =
   | 'manual'
   | 'apple_health'

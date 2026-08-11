@@ -258,6 +258,95 @@ export interface MilestoneState {
   reached: boolean;
 }
 
+// ─── Weekly awards (recap superlatives) ─────────────────────────────
+
+export interface WeeklyAward {
+  key: string;
+  title: string;
+  icon: string;         // lucide name
+  winnerUserId: string;
+  detail: string;       // e.g. "412 reps", "3:41 hold"
+}
+
+/**
+ * Compute the notable awards for a completed week from its activities.
+ * All derived — champion, most balanced, biggest final-day push, longest
+ * in-week streak, plus a per-exercise leader (longest hold for time
+ * exercises, top total otherwise). `format` renders a raw value for the
+ * exercise's measurement type (injected to avoid a measurement import here).
+ */
+export function computeWeeklyAwards(
+  week: { starts_at: string; ends_at: string },
+  weekExercises: WeekExerciseWithDef[],
+  activities: WorkoutActivity[],
+  format: (mt: WorkoutActivity['measurement_type'], value: number) => string,
+): WeeklyAward[] {
+  const acts = activities.filter(active);
+  if (acts.length === 0) return [];
+  const userIds = [...new Set(acts.map(a => a.user_id))];
+  const awards: WeeklyAward[] = [];
+
+  // Champion — top total score.
+  const board = buildLeaderboard(weekExercises, acts);
+  if (board[0] && board[0].score > 0) {
+    awards.push({ key: 'champion', title: 'Champion', icon: 'Trophy', winnerUserId: board[0].userId, detail: `${board[0].score.toLocaleString()} pts` });
+  }
+
+  // Most Balanced — highest minimum per-exercise goal fraction (spread effort).
+  if (weekExercises.length > 1) {
+    let best: { userId: string; min: number } | null = null;
+    for (const uid of userIds) {
+      const mine = acts.filter(a => a.user_id === uid);
+      const min = Math.min(...weekExercises.map(we => computeExerciseProgress(we, mine).goalPct));
+      if (!best || min > best.min) best = { userId: uid, min };
+    }
+    if (best && best.min > 0) awards.push({ key: 'balanced', title: 'Most Balanced', icon: 'Scale', winnerUserId: best.userId, detail: `${Math.round(best.min * 100)}% across all` });
+  }
+
+  // Biggest Final-Day Push — most raw logged in the last 24h.
+  const end = new Date(week.ends_at).getTime();
+  const dayBefore = end - 86400000;
+  const finalByUser = new Map<string, number>();
+  for (const a of acts) {
+    const t = new Date(a.logged_at).getTime();
+    if (t >= dayBefore && t <= end) finalByUser.set(a.user_id, (finalByUser.get(a.user_id) ?? 0) + Number(a.raw_value));
+  }
+  const finalTop = [...finalByUser.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (finalTop && finalTop[1] > 0) awards.push({ key: 'final_push', title: 'Biggest Final Push', icon: 'Zap', winnerUserId: finalTop[0], detail: 'clutch finish' });
+
+  // Longest in-week streak — most active local days during the week.
+  let streakBest: { userId: string; days: number } | null = null;
+  for (const uid of userIds) {
+    const days = new Set(acts.filter(a => a.user_id === uid).map(a => a.activity_local_date)).size;
+    if (!streakBest || days > streakBest.days) streakBest = { userId: uid, days };
+  }
+  if (streakBest && streakBest.days >= 2) awards.push({ key: 'consistency', title: 'Most Consistent', icon: 'Flame', winnerUserId: streakBest.userId, detail: `${streakBest.days} active days` });
+
+  // Per-exercise leaders.
+  for (const we of weekExercises) {
+    const ex = we.exercise;
+    const isTime = ex.measurement_type === 'timed_hold' || ex.measurement_type === 'countdown' || ex.measurement_type === 'duration';
+    let best: { userId: string; value: number } | null = null;
+    for (const uid of userIds) {
+      const mine = acts.filter(a => a.user_id === uid && a.exercise_id === ex.id);
+      if (mine.length === 0) continue;
+      const value = isTime ? Math.max(...mine.map(a => Number(a.raw_value))) : sumRaw(mine);
+      if (!best || value > best.value) best = { userId: uid, value };
+    }
+    if (best && best.value > 0) {
+      awards.push({
+        key: `ex_${ex.id}`,
+        title: isTime ? `Longest ${ex.name}` : `${ex.name} Leader`,
+        icon: 'Medal',
+        winnerUserId: best.userId,
+        detail: format(ex.measurement_type, best.value),
+      });
+    }
+  }
+
+  return awards;
+}
+
 export function computeMilestones(
   config: MilestoneConfig,
   lifetimeTotal: number,

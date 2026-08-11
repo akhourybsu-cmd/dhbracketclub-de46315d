@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Dumbbell, Settings, Trophy, ChevronRight, Flame, Timer, Play, Medal } from 'lucide-react';
+import { Dumbbell, Settings, Trophy, ChevronRight, Flame, Timer, Play, Medal, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,7 +43,7 @@ export default function WorkoutPage() {
   const installed = isInstalled('workout-competition');
 
   const {
-    week, weekExercises, weekActivities, myActivities, members, unlocks, pastWeeks, loading, error,
+    week, weekExercises, weekActivities, myActivities, members, unlocks, pastWeeks, groupGoals, loading, error,
     logActivity, undoLast, insertUnlock,
   } = useWorkoutArena(club?.id, user?.id);
 
@@ -235,6 +235,30 @@ export default function WorkoutPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* Club group goals — combined progress across all members */}
+      {groupGoals.map((g) => {
+        const combined = weekActivities.filter(a => a.exercise_id === g.exercise_id).reduce((t, a) => t + Number(a.raw_value), 0);
+        const pct = g.target > 0 ? Math.min(1, combined / g.target) : 0;
+        return (
+          <div key={g.id} className="glass-card p-4 mb-4 border border-primary/15">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="w-4 h-4 text-primary" />
+              <h3 className="text-[13px] font-black uppercase tracking-[0.1em]">Club Goal</h3>
+              {pct >= 1 && <span className="ml-auto text-[11px] font-black text-primary">Complete 🎉</span>}
+            </div>
+            <p className="text-[14px] font-bold mb-2">{g.title}</p>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <span className="text-[18px] font-black tabular-nums">{formatValueShort(g.exercise.measurement_type, combined)}</span>
+              <span className="text-[12px] font-bold text-muted-foreground/60 tabular-nums">/ {formatValueShort(g.exercise.measurement_type, g.target)}</span>
+            </div>
+            <div className="h-2.5 rounded-full bg-muted/40 overflow-hidden">
+              <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary) / 0.7))' }}
+                initial={false} animate={{ width: `${Math.round(pct * 100)}%` }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} />
+            </div>
+          </div>
+        );
+      })}
 
       {/* Exercise progress rows */}
       <h3 className="section-header mb-2">This week's workouts</h3>

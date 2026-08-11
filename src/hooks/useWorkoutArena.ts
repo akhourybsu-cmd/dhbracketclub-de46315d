@@ -4,7 +4,7 @@ import { withTimeout, QUERY_TIMEOUT_MS, HYDRATE_TIMEOUT_MS } from '@/lib/asyncGu
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import type {
   WorkoutWeek, WorkoutExercise, WorkoutActivity, WeekExerciseWithDef,
-  LogActivityInput,
+  LogActivityInput, GroupGoalWithDef,
 } from '@/lib/workout/types';
 
 // Untyped table access — workout_* tables aren't in the generated types yet.
@@ -37,6 +37,7 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
   const [members, setMembers] = useState<WorkoutMember[]>([]);
   const [unlocks, setUnlocks] = useState<string[]>([]);
   const [pastWeeks, setPastWeeks] = useState<WorkoutWeek[]>([]);
+  const [groupGoals, setGroupGoals] = useState<GroupGoalWithDef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,8 +84,9 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
             ? withTimeout(Promise.all([
                 sb.from('workout_week_exercises').select('*, exercise:workout_exercises(*)').eq('week_id', activeWeek.id).order('sort_order'),
                 sb.from('workout_activities').select('*').eq('week_id', activeWeek.id).eq('status', 'active'),
+                sb.from('workout_group_goals').select('*, exercise:workout_exercises(*)').eq('week_id', activeWeek.id),
               ]), HYDRATE_TIMEOUT_MS, 'workout week bundle')
-            : Promise.resolve([{ data: [] }, { data: [] }] as any),
+            : Promise.resolve([{ data: [] }, { data: [] }, { data: [] }] as any),
           withTimeout(
             sb.from('workout_activities').select('*').eq('user_id', userId).eq('status', 'active').order('logged_at', { ascending: false }).limit(1000),
             QUERY_TIMEOUT_MS, 'workout my activity',
@@ -101,9 +103,10 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
         HYDRATE_TIMEOUT_MS, 'workout arena hydrate',
       ) as any;
 
-      const [{ data: weRows }, { data: actRows }] = weekBundle as any;
+      const [{ data: weRows }, { data: actRows }, { data: ggRows }] = weekBundle as any;
       setWeekExercises((weRows || []).filter((r: any) => r.exercise) as WeekExerciseWithDef[]);
       setWeekActivities((actRows || []) as WorkoutActivity[]);
+      setGroupGoals(((ggRows || []) as GroupGoalWithDef[]).filter(g => g.exercise));
       setMyActivities((mine || []) as WorkoutActivity[]);
       setUnlocks(((unlockRows || []) as any[]).map(r => r.achievement_key));
       setPastWeeks((pastRows || []) as WorkoutWeek[]);
@@ -225,7 +228,7 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
 
   return {
     week, weekExercises, weekActivities, myActivities, members, exercisesById,
-    unlocks, pastWeeks,
+    unlocks, pastWeeks, groupGoals,
     loading, error, refresh, logActivity, undoLast, insertUnlock,
     localToday,
   };
