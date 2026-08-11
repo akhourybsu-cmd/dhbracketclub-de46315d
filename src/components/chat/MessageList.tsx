@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, useLayoutEffect } from 'react';
+import { useRef, useEffect, useCallback, useState, useLayoutEffect, memo } from 'react';
 import { MessageSquare, ChevronDown, SearchX } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageBubble } from './MessageBubble';
@@ -43,7 +43,7 @@ function getDateLabel(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-export function MessageList({
+function MessageListInner({
   messages, selectedChannel, userId, currentDisplayName,
   onToggleReaction, onOpenThread, onTogglePin,
   onStartEditing, onDeleteMessage, onSaveEdit,
@@ -143,13 +143,17 @@ export function MessageList({
     return () => observer.disconnect();
   }, [autoScroll]);
 
-  // External scroll-to-bottom trigger
+  // External scroll-to-bottom trigger. This is an *explicit* "go to bottom
+  // now" signal (e.g. the user just sent a message), so it overrides the
+  // scrolled-up state and re-arms auto-scroll — you always land on your own
+  // outgoing message, exactly like a texting app.
   useEffect(() => {
-    if (scrollToBottomTrigger && autoScroll) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView();
-      });
-    }
+    if (!scrollToBottomTrigger) return;
+    setAutoScroll(true);
+    setNewMsgCount(0);
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
   }, [scrollToBottomTrigger]);
 
   // Passive scroll handler
@@ -322,3 +326,9 @@ export function MessageList({
     </div>
   );
 }
+
+// Memoized: the composer's text state lives in the parent (ChatPage), so it
+// re-renders on every keystroke. Without this, the whole message list would
+// re-run its map + date/grouping math on each character typed. All props are
+// stable identities during typing, so the list simply skips those renders.
+export const MessageList = memo(MessageListInner);

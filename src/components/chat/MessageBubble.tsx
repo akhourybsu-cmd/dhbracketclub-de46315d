@@ -770,6 +770,14 @@ function MessageBubbleInner({
 }
 
 export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
+  // Edit state is global, but only the message actually being edited cares
+  // about it. Scoping the comparison here means typing in one message's edit
+  // box re-renders just that bubble — not all 50 in the list.
+  const wasEditingThis = prev.editingMessageId === prev.msg.id;
+  const isEditingThis = next.editingMessageId === next.msg.id;
+  if (wasEditingThis !== isEditingThis) return false;
+  if (isEditingThis && prev.editContent !== next.editContent) return false;
+
   return (
     prev.msg.id === next.msg.id &&
     prev.msg.content === next.msg.content &&
@@ -781,8 +789,6 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
     prev.isOwn === next.isOwn &&
     prev.sameAuthor === next.sameAuthor &&
     prev.nextSameAuthor === next.nextSameAuthor &&
-    prev.editingMessageId === next.editingMessageId &&
-    prev.editContent === next.editContent &&
     prev.isOverlayOpen === next.isOverlayOpen
   );
 });
