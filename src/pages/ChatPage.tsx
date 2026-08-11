@@ -17,16 +17,19 @@ import { toast } from 'sonner';
 
 import { ChannelList } from '@/components/chat/ChannelList';
 import { MessageList } from '@/components/chat/MessageList';
-import { MessageComposer, type MessageComposerHandle, type MentionMember } from '@/components/chat/MessageComposer';
+import { MessageComposer, type MessageComposerHandle } from '@/components/chat/MessageComposer';
 import { ThreadPanel } from '@/components/chat/ThreadPanel';
 import { UserAvatar } from '@/components/chat/UserAvatar';
 import { ChannelSettingsDialog } from '@/components/chat/ChannelSettingsDialog';
 import { CHANNEL_EMOJI } from '@/components/chat/types';
-import type { Channel, Category, ChannelMeta, Message } from '@/components/chat/types';
+import type { Channel, Message } from '@/components/chat/types';
 
 import { useChatMessages } from '@/hooks/useChatMessages';
 import { useChatRealtime, useChatTyping } from '@/hooks/useChatRealtime';
 import { useChatActions } from '@/hooks/useChatActions';
+import { useChatChannels } from '@/hooks/useChatChannels';
+import { useChatMembers } from '@/hooks/useChatMembers';
+import { useChatSearch } from '@/hooks/useChatSearch';
 import { notifyThreadReply } from '@/lib/chatNotifications';
 import { applySlashCommand } from '@/lib/chatSlashCommands';
 import { useClubPresence } from '@/hooks/useClubPresence';
@@ -74,13 +77,6 @@ export default function ChatPage() {
     };
   }, []);
 
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [channelMeta, setChannelMeta] = useState<Map<string, ChannelMeta>>(new Map());
-  const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
-  const [showChannelList, setShowChannelList] = useState(true);
-  const [loading, setLoading] = useState(true);
-
   const [newMessage, setNewMessage] = useState('');
 
   // Thread
@@ -93,17 +89,6 @@ export default function ChatPage() {
   // Pinned
   const [showPinned, setShowPinned] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
-
-  // Search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchResults, setSearchResults] = useState<Message[] | null>(null);
-
-  // Members for @mention autocomplete
-  const [members, setMembers] = useState<MentionMember[]>([]);
-  const membersRef = useRef<MentionMember[]>([]);
-  useEffect(() => { membersRef.current = members; }, [members]);
-  const [currentDisplayName, setCurrentDisplayName] = useState<string>('');
 
   // Last read timestamp for unread divider
   const [lastReadAt, setLastReadAt] = useState<string | null>(null);
@@ -128,6 +113,48 @@ export default function ChatPage() {
     startEditing, handleSaveEdit,
     editingMessageId, editContent, setEditContent, cancelEdit,
   } = useChatActions(user?.id, { setMessages, reactionEchoRef });
+
+  // Club members (@mention autocomplete) + current display name.
+  const { members, membersRef, currentDisplayName } = useChatMembers(user?.id, club?.id);
+
+  // Switching channels wipes every channel-scoped concern OTHER than the
+  // channel data itself. Owned here (not in useChatChannels) because these
+  // are the page's cross-cutting states. Search resets itself on channel
+  // change (keyed inside useChatSearch), so it's not listed here.
+  const resetForChannelSwitch = useCallback(() => {
+    setMessages([]);
+    setThreadParent(null);
+    setThreadMessages([]);
+    setThreadReply('');
+    setShowPinned(false);
+    setPinnedMessages([]);
+    setLastReadAt(null);
+    cancelEdit();
+    setNewMessage('');
+  }, [setMessages, cancelEdit]);
+
+  // Channels + categories + live previews + selection + admin CRUD.
+  const {
+    channels, categories, channelMeta, setChannelMeta,
+    selectedChannel, showChannelList, setShowChannelList, loading,
+    selectChannel,
+    handleCreateChannel, handleEditChannel, handleUpdateChannel,
+    handleDeleteChannel, handleCreateCategory, handleReorderChannels,
+  } = useChatChannels({
+    userId: user?.id,
+    isClubAdmin,
+    play,
+    composerRef,
+    membersRef,
+    onSwitchChannel: resetForChannelSwitch,
+  });
+
+  // Debounced in-channel search (auto-resets when the channel changes).
+  const {
+    showSearch, setShowSearch,
+    searchQuery, setSearchQuery,
+    searchResults, setSearchResults,
+  } = useChatSearch(selectedChannel?.id);
 
   useChatRealtime({
     channelId: selectedChannel?.id,
@@ -154,141 +181,6 @@ export default function ChatPage() {
     displayName: currentDisplayName || user?.user_metadata?.display_name || undefined,
     avatarUrl: user?.user_metadata?.avatar_url || null,
   });
-
-  /* ═══ FETCH CHANNELS ═══ */
-  const selectedChannelRef = useRef<Channel | null>(null);
-  selectedChannelRef.current = selectedChannel;
-
-  const fetchChannels = useCallback(async () => {
-    if (!user) return;
-    const [{ data: cats }, { data: chs }] = await Promise.all([
-      supabase.from('channel_categories').select('*').order('position'),
-      supabase.from('channels').select('*').order('position'),
-    ]);
-    if (cats) setCategories(cats);
-    if (chs) {
-      // Hide admin_only channels from non-admins (RLS doesn't gate this — channels are club-scoped only).
-      const visibleChs = (chs as Channel[]).filter(c => c.channel_type !== 'admin_only' || isClubAdmin);
-      setChannels(visibleChs);
-      const chIds = visibleChs.map((c: any) => c.id);
-      const { data: lastMsgs } = await supabase
-        .from('messages')
-        .select('channel_id, content, created_at, user_id, profiles:user_id(display_name)')
-        .is('parent_message_id', null)
-        .in('channel_id', chIds)
-        .order('created_at', { ascending: false })
-        .limit(200);
-
-      let readStatesMap = new Map<string, string>();
-      try {
-        const { data: rsData } = await supabase.from('channel_read_states' as any).select('channel_id, last_read_at').eq('user_id', user.id).in('channel_id', chIds);
-        if (rsData) (rsData as any[]).forEach((rs: any) => readStatesMap.set(rs.channel_id, rs.last_read_at));
-      } catch {}
-
-      const meta = new Map<string, ChannelMeta>();
-      const seenChannels = new Set<string>();
-      if (lastMsgs) {
-        lastMsgs.forEach((m: any) => {
-          if (!seenChannels.has(m.channel_id)) {
-            seenChannels.add(m.channel_id);
-            const lastRead = readStatesMap.get(m.channel_id);
-            const fromMe = m.user_id === user.id;
-            // Unread ONLY when latest message is from someone else AND is newer than last_read_at
-            const isUnread = !fromMe && (!lastRead || new Date(m.created_at) > new Date(lastRead));
-            meta.set(m.channel_id, {
-              lastMessage: m.content,
-              lastMessageAt: m.created_at,
-              lastAuthor: m.profiles?.display_name || '',
-              lastAuthorId: m.user_id,
-              unread: isUnread,
-            });
-          }
-        });
-      }
-      chIds.forEach((id: string) => { if (!meta.has(id)) meta.set(id, { unread: false }); });
-      setChannelMeta(meta);
-
-      // Only auto-select on initial load (no channel selected yet).
-      // On mobile we keep the user on the channel-list view so nothing feels artificially "active";
-      // on desktop we auto-open the saved/default channel because the sidebar always shows the list.
-      if (!selectedChannelRef.current) {
-        const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
-        let target: Channel | undefined;
-        try {
-          const savedId = localStorage.getItem('last_chat_channel_id');
-          if (savedId) target = visibleChs.find(c => c.id === savedId);
-        } catch {}
-        if (!target) target = visibleChs.find(c => c.is_default) || (chs[0] as Channel);
-        if (target) {
-          setSelectedChannel(target);
-          if (isDesktop) setShowChannelList(false);
-        }
-      } else {
-        // If the currently selected channel still exists, refresh its data from the fetch
-        const refreshed = visibleChs.find(c => c.id === selectedChannelRef.current!.id);
-        if (refreshed) setSelectedChannel(refreshed);
-      }
-    }
-    setLoading(false);
-  }, [user, isClubAdmin]);
-
-  useEffect(() => { fetchChannels(); }, [fetchChannels]);
-
-  /* ═══ GLOBAL REALTIME — keep channel previews live across ALL channels ═══ */
-  const selectedIdRef = useRef<string | null>(null);
-  selectedIdRef.current = selectedChannel?.id || null;
-  useEffect(() => {
-    if (!user) return;
-    const ch = supabase
-      .channel('chat-channel-previews')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        const m = payload.new as any;
-        if (m.parent_message_id) return; // threads don't update channel previews
-        // Look up author name from cached members ref; only fetch from DB if unknown
-        const cachedMember = membersRef.current.find(mb => mb.id === m.user_id);
-        let authorName = cachedMember?.display_name || '';
-        if (!cachedMember) {
-          const { data: prof } = await supabase.from('profiles').select('display_name').eq('id', m.user_id).maybeSingle();
-          authorName = prof?.display_name || '';
-        }
-        setChannelMeta(prev => {
-          const next = new Map(prev);
-          const existing = next.get(m.channel_id) || { unread: false };
-          const isViewing = selectedIdRef.current === m.channel_id;
-          const fromMe = m.user_id === user.id;
-          next.set(m.channel_id, {
-            ...existing,
-            lastMessage: m.content,
-            lastMessageAt: m.created_at,
-            lastAuthor: authorName,
-            lastAuthorId: m.user_id,
-            // Never unread for self-sent or actively-viewed channels.
-            // Self-sent messages also clear any prior unread state for this user.
-            unread: fromMe ? false : (isViewing ? false : true),
-          });
-          return next;
-        });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [user]);
-  useEffect(() => {
-    if (!user || !club?.id) return;
-    (async () => {
-      const { data: memberRows } = await supabase
-        .from('club_members')
-        .select('user_id, profiles:user_id(id, display_name, avatar_url)')
-        .eq('club_id', club.id);
-      if (memberRows) {
-        const list = memberRows
-          .map((r: any) => r.profiles)
-          .filter((p: any) => p && p.id && p.display_name);
-        setMembers(list.map((p: any) => ({ id: p.id, display_name: p.display_name, avatar_url: p.avatar_url })));
-        const me = list.find((p: any) => p.id === user.id);
-        if (me) setCurrentDisplayName(me.display_name);
-      }
-    })();
-  }, [user, club?.id]);
 
   /* ═══ FETCH MESSAGES ═══ */
   useEffect(() => {
@@ -475,146 +367,6 @@ export default function ChatPage() {
       .order('created_at', { ascending: false });
     setPinnedMessages(data || []);
   };
-
-  const handleCreateChannel = async (name: string, categoryId: string) => {
-    if (!user) return;
-    play('success');
-    await supabase.from('channels').insert({ name, category_id: categoryId || null, created_by: user.id, position: channels.length });
-    fetchChannels();
-  };
-
-  const handleEditChannel = async (channelId: string, newName: string) => {
-    if (!user) return;
-    const { error } = await supabase.from('channels').update({ name: newName }).eq('id', channelId);
-    if (error) {
-      toast.error('Failed to rename channel');
-    } else {
-      play('success');
-      toast.success('Channel renamed');
-      setChannels(prev => prev.map(ch => ch.id === channelId ? { ...ch, name: newName } : ch));
-      if (selectedChannel?.id === channelId) {
-        setSelectedChannel(prev => prev ? { ...prev, name: newName } : prev);
-      }
-    }
-  };
-
-  const handleUpdateChannel = async (channelId: string, updates: Partial<Pick<Channel, 'name' | 'description' | 'icon' | 'category_id' | 'is_default' | 'channel_type' | 'post_permission'>>): Promise<boolean> => {
-    if (!user) return false;
-    const { error } = await supabase.from('channels').update(updates as any).eq('id', channelId);
-    if (error) {
-      toast.error('Failed to update channel');
-      return false;
-    }
-    play('success');
-    toast.success('Channel updated');
-    setChannels(prev => prev.map(ch => ch.id === channelId ? { ...ch, ...updates } : ch));
-    if (selectedChannel?.id === channelId) {
-      setSelectedChannel(prev => prev ? { ...prev, ...updates } as Channel : prev);
-    }
-    return true;
-  };
-
-  const handleDeleteChannel = async (channelId: string) => {
-    if (!user) return;
-    // messages.channel_id has ON DELETE CASCADE — no need to nuke rows client-side.
-    const { error } = await supabase.from('channels').delete().eq('id', channelId);
-    if (error) {
-      toast.error('Failed to delete channel');
-    } else {
-      play('success');
-      toast.success('Channel deleted');
-      setChannels(prev => prev.filter(ch => ch.id !== channelId));
-      if (selectedChannel?.id === channelId) {
-        const remaining = channels.filter(ch => ch.id !== channelId);
-        const def = remaining.find(c => c.is_default) || remaining[0] || null;
-        setSelectedChannel(def);
-        if (!def) setShowChannelList(true);
-      }
-    }
-  };
-
-  const handleCreateCategory = async (name: string) => {
-    if (!user) return;
-    const { error } = await supabase.from('channel_categories').insert({ name, position: categories.length });
-    if (error) {
-      toast.error('Failed to create category');
-    } else {
-      play('success');
-      fetchChannels();
-    }
-  };
-
-  const handleReorderChannels = async (categoryId: string, reordered: Channel[]) => {
-    setChannels(prev => {
-      const others = prev.filter(ch => ch.category_id !== categoryId);
-      const updated = reordered.map((ch, i) => ({ ...ch, position: i }));
-      return [...others, ...updated].sort((a, b) => a.position - b.position);
-    });
-    await Promise.all(
-      reordered.map((ch, i) =>
-        supabase.from('channels').update({ position: i }).eq('id', ch.id)
-      )
-    );
-  };
-
-  const selectChannel = (ch: Channel) => {
-    if (ch.id === selectedChannel?.id) {
-      // Already on this channel — just close mobile list
-      setShowChannelList(false);
-      return;
-    }
-    // Immediately update selected channel & header
-    setSelectedChannel(ch);
-    // Clear all channel-specific state atomically
-    setMessages([]);
-    setThreadParent(null);
-    setThreadMessages([]);
-    setThreadReply('');
-    setShowPinned(false);
-    setPinnedMessages([]);
-    setLastReadAt(null);
-    setShowSearch(false);
-    setSearchQuery('');
-    setSearchResults(null);
-    cancelEdit();
-    setNewMessage('');
-    try { localStorage.setItem('last_chat_channel_id', ch.id); } catch {}
-    // Optimistically clear unread dot for the channel we're entering
-    setChannelMeta(prev => {
-      const next = new Map(prev);
-      const m = next.get(ch.id);
-      if (m?.unread) next.set(ch.id, { ...m, unread: false });
-      return next;
-    });
-    setShowChannelList(false);
-    play('tap');
-    const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
-    if (isDesktop) {
-      setTimeout(() => composerRef.current?.focus(), 200);
-    }
-  };
-
-  /* ═══ DB-SIDE SEARCH ═══ */
-  useEffect(() => {
-    if (!showSearch || !searchQuery.trim() || !selectedChannel) {
-      setSearchResults(null);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      const { data } = await supabase
-        .from('messages')
-        .select('*, profiles:user_id(display_name, avatar_url)')
-        .eq('channel_id', selectedChannel.id)
-        .is('parent_message_id', null)
-        .ilike('content', `%${searchQuery}%`)
-        .order('created_at', { ascending: true })
-        .limit(50);
-      if (data) {
-        setSearchResults(data.map(m => ({ ...m, reply_count: 0, reactions: [] })));
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery, showSearch, selectedChannel]);
 
   const pinnedCount = useMemo(() => messages.filter(m => m.is_pinned).length, [messages]);
   const showSidePanel = !!threadParent || showPinned;

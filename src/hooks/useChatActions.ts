@@ -5,31 +5,20 @@ import { toast } from 'sonner';
 import type { Message } from '@/components/chat/types';
 import { notifyReaction } from '@/lib/chatNotifications';
 
-// Legacy path: when the caller didn't wire optimistic state setters,
-// we still need to know whether to DELETE or INSERT. Used only when
-// `setMessages` wasn't provided to useChatActions.
-async function userHasReaction(messageId: string, emoji: string, userId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('message_reactions').select('id')
-    .eq('message_id', messageId).eq('user_id', userId).eq('emoji', emoji)
-    .maybeSingle();
-  return !!data;
-}
-
 interface UseChatActionsOptions {
   /** Setter for the main messages array — used by optimistic
    *  reaction toggling so the UI updates in the same frame as the
-   *  tap. */
-  setMessages?: React.Dispatch<React.SetStateAction<Message[]>>;
+   *  tap. Required: reactions are always optimistic. */
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   /** Shared echo set keyed by `${messageId}:${emoji}:${action}`.
    *  Whenever we optimistically toggle a reaction here, we record an
    *  entry; useChatRealtime checks the set and skips its own apply
    *  when an INSERT/DELETE comes back as the echo of our optimistic
    *  action. Prevents double-counting. */
-  reactionEchoRef?: React.RefObject<Set<string>>;
+  reactionEchoRef: React.RefObject<Set<string>>;
 }
 
-export function useChatActions(userId: string | undefined, opts: UseChatActionsOptions = {}) {
+export function useChatActions(userId: string | undefined, opts: UseChatActionsOptions) {
   const { play } = useSoundEffect();
   const { setMessages, reactionEchoRef } = opts;
 
@@ -43,7 +32,6 @@ export function useChatActions(userId: string | undefined, opts: UseChatActionsO
   // closure so we always see fresh state even if the user mashes the
   // button.
   const applyOptimisticToggle = useCallback((messageId: string, emoji: string): 'added' | 'removed' | null => {
-    if (!setMessages) return null;
     let action: 'added' | 'removed' | null = null;
     setMessages(prev => prev.map(m => {
       if (m.id !== messageId) return m;
@@ -90,7 +78,7 @@ export function useChatActions(userId: string | undefined, opts: UseChatActionsO
     //    state back AND clear the echo (so a later genuine state
     //    update doesn't get swallowed).
     try {
-      if (action === 'removed' || (action === null /* legacy path */ && await userHasReaction(messageId, emoji, userId))) {
+      if (action === 'removed') {
         const { data: existing } = await supabase
           .from('message_reactions').select('id')
           .eq('message_id', messageId).eq('user_id', userId).eq('emoji', emoji)
