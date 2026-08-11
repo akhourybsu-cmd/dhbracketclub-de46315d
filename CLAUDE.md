@@ -37,7 +37,7 @@ Auth → Club → Installed Assets → Plugin UI surfaces (Home / Settings / Pro
 7. (Optional) Add per-plugin settings table and an admin panel — mount it inside `ClubSettingsPage` conditionally.
 
 Existing slugs (canonical list in `NAV_ASSET_SLUGS`):
-`draft-arena`, `rune-delve`, `nexus-defense`, `nfl-pickem`, `brackets`, `portfolio-wars`, `lockbox`, `chat`, `events`, `lore`, `feed`, `polls`, `rankings`, `posts`, `shared-media`, `birthdays-milestones`, `narrative-rpg`.
+`draft-arena`, `rune-delve`, `nexus-defense`, `nfl-pickem`, `brackets`, `portfolio-wars`, `lockbox`, `chat`, `events`, `lore`, `feed`, `polls`, `rankings`, `posts`, `shared-media`, `birthdays-milestones`, `narrative-rpg`, `workout-competition`.
 
 ## Conventions
 
@@ -65,6 +65,7 @@ These are stable; reference them as patterns, don't reinvent.
 | Asset Library with optimistic install + undo | `/club/assets` | [`src/components/clubAssets/`](src/components/clubAssets/), [`src/hooks/useClubAssets.ts`](src/hooks/useClubAssets.ts) |
 | Onboarding framework (club intro + What's New + admin preview) | Auto-mounts on Home + Asset Library | [`src/lib/onboarding/`](src/lib/onboarding/), [`src/components/onboarding/`](src/components/onboarding/), [`src/hooks/useOnboarding.ts`](src/hooks/useOnboarding.ts) |
 | Birthdays & Milestones (first installable plugin) | `/celebrations`, Home widget, Club Settings panel, Profile section | [`src/components/celebrations/`](src/components/celebrations/), [`src/hooks/useCelebrations.ts`](src/hooks/useCelebrations.ts), [`src/lib/celebrations/dates.ts`](src/lib/celebrations/dates.ts) |
+| Workout Arena (Workout Competition engine) | `/workouts` (member week screen: score, rank, per-exercise progress + few-seconds logging, leaderboard preview), `/workouts/admin` (admin: measurement-type-driven exercise builder + competition-week builder). Engine-driven: an exercise's `measurement_type` picks its logger. Loggers: Rep, Timer (timed hold), Duration, Countdown, Distance, Steps, Sets×Reps, Round, Completion — all writing ONE normalized `workout_activities` row. Score/XP/leaderboard/records/streaks/milestones are all **derived on read** in the scoring lib from raw values (client never submits computed totals). Timers are timestamp-based + localStorage-persisted (survive lock/background/reload). `source_type`/`source_activity_id` on activities make future Apple Health/Fitbit/Garmin imports use the same model — not built yet. | [`src/lib/workout/`](src/lib/workout/) (types, measurement registry, scoring, useStopwatch), [`src/components/workout/`](src/components/workout/) (WorkoutLoggers, WorkoutLoggerSheet, ExerciseForm), [`src/hooks/useWorkoutArena.ts`](src/hooks/useWorkoutArena.ts), [`src/hooks/useWorkoutAdmin.ts`](src/hooks/useWorkoutAdmin.ts), [`src/pages/WorkoutPage.tsx`](src/pages/WorkoutPage.tsx), [`src/pages/WorkoutAdminPage.tsx`](src/pages/WorkoutAdminPage.tsx), migration `20260811090000_workout-competition.sql` |
 | Narrative RPG (Chronicle Engine) | `/narrative` campaigns list, `/narrative/new` proposal, `/narrative/:id` detail with Story/Characters/World/Log tabs + GM Console drawer (Scene · Chapters · NPCs · Clues · Items · Factions · Clocks · Memory · Notes · AI). Reusable `EntityEditSheet` for inline edit of every GM-managed row. Real AI via `narrative-ai` edge function + `LOVABLE_API_KEY`, gated client-side by `VITE_NARRATIVE_AI_ENABLED`. SceneSummaryWizard for manual memory updates with structured diff review. MemberManagementSheet (invite/role/remove, guards against losing the only GM). LiveSessionControls (start/end + Live Now pill + duration). Player composer AI assist (public scope only). Computed campaign status (Waiting on GM / Waiting on Players / Live Now). | [`src/lib/narrative/`](src/lib/narrative/) (ruleset, templates, ai service, types, applyStateUpdates, campaignStatus), [`src/components/narrative/`](src/components/narrative/), [`src/hooks/useNarrativeCampaigns.ts`](src/hooks/useNarrativeCampaigns.ts), [`src/hooks/useNarrativeCampaign.ts`](src/hooks/useNarrativeCampaign.ts), [`supabase/functions/narrative-ai/`](supabase/functions/narrative-ai/) |
 
 ## Routing patterns
@@ -91,6 +92,7 @@ Auth + club guards live in [`src/App.tsx`](src/App.tsx):
 | `dh_onboarding_v1:` | Onboarding status per (user, club) |
 | `nexus_run_state_v1:` | In-flight Nexus battle saves per (user, mission) |
 | `nexus_endless_layout_v1` | Endless map layout choice |
+| `dh_workout_timer_v1:` | In-progress Workout Arena timer (timed hold / countdown) per exercise — timestamp-based, survives reload |
 
 ## Don'ts
 

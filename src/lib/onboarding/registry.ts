@@ -412,6 +412,25 @@ const REGISTRY: Record<string, FeatureOnboarding> = {
     ],
     primaryCta: { label: 'Open Narrative RPG', route: '/narrative' },
   },
+
+  'workout-competition': {
+    featureKey: 'workout-competition',
+    displayName: 'Workout Arena',
+    shortDescription: 'A weekly at-home fitness competition you play by exercising.',
+    featureType: 'game',
+    importance: 'important',
+    version: 1,
+    iconKey: 'Dumbbell',
+    tags: ['Fitness', 'Weekly', 'Competition', 'Leaderboard'],
+    onboardingTitle: 'Workout Arena is live',
+    onboardingSummary: 'Log push-ups, planks, runs and more in seconds. Every workout has its own logger, and your reps climb the weekly leaderboard.',
+    onboardingSteps: [
+      { title: 'Log in seconds', body: 'Each workout gives you the right tool — a tap counter for push-ups, a persistent timer for planks, a round tracker for circuits. No forms.', iconKey: 'Timer' },
+      { title: 'Chase the weekly goal', body: 'Every week is a fresh competition with its own workouts and goals. Your activity earns competition points toward the leaderboard.', iconKey: 'Trophy' },
+      { title: 'Level up for good', body: 'Competition score resets each week, but XP, records and milestones keep building the whole time you play.', iconKey: 'TrendingUp' },
+    ],
+    primaryCta: { label: 'Open Workout Arena', route: '/workouts' },
+  },
 };
 
 /* ─── Selectors ─────────────────────────────────────────────────────── */

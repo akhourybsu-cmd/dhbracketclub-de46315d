@@ -82,6 +82,8 @@ const RuneDelveDailyPage = lazy(() => import("./pages/RuneDelveDailyPage"));
 const RuneDelveEndlessPage = lazy(() => import("./pages/RuneDelveEndlessPage"));
 const RuneDelveQuestsPage = lazy(() => import("./pages/RuneDelveQuestsPage"));
 const CelebrationsPage = lazy(() => import("./pages/CelebrationsPage"));
+const WorkoutPage = lazy(() => import("./pages/WorkoutPage"));
+const WorkoutAdminPage = lazy(() => import("./pages/WorkoutAdminPage"));
 const NarrativeCampaignsPage = lazy(() => import("./pages/NarrativeCampaignsPage"));
 const NarrativeCampaignCreatePage = lazy(() => import("./pages/NarrativeCampaignCreatePage"));
 const NarrativeCampaignDetailPage = lazy(() => import("./pages/NarrativeCampaignDetailPage"));
@@ -285,6 +287,8 @@ function AnimatedRoutes() {
 
         <Route path="/profile" element={<ProtectedPage><ProfilePage /></ProtectedPage>} />
         <Route path="/celebrations" element={<ProtectedPage assetSlug="birthdays-milestones"><CelebrationsPage /></ProtectedPage>} />
+        <Route path="/workouts" element={<ProtectedPage assetSlug="workout-competition"><WorkoutPage /></ProtectedPage>} />
+        <Route path="/workouts/admin" element={<ProtectedPage assetSlug="workout-competition"><ClubAdminRoute><WorkoutAdminPage /></ClubAdminRoute></ProtectedPage>} />
         <Route path="/narrative" element={<ProtectedPage assetSlug="narrative-rpg"><NarrativeCampaignsPage /></ProtectedPage>} />
         <Route path="/narrative/new" element={<ProtectedPage assetSlug="narrative-rpg"><NarrativeCampaignCreatePage /></ProtectedPage>} />
         <Route path="/narrative/:campaignId" element={<ProtectedPage assetSlug="narrative-rpg"><NarrativeCampaignDetailPage /></ProtectedPage>} />

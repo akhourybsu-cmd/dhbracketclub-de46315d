@@ -15,7 +15,7 @@ import { motion } from 'framer-motion';
 import {
   Bookmark, TrendingUp, Lock, Trophy, MessageSquareText,
   CalendarDays, ScrollText, Newspaper, MessageCircle, BarChart3, FileText, Link2,
-  Plus, Sparkles, Cake,
+  Plus, Sparkles, Cake, Dumbbell,
   type LucideIcon,
 } from 'lucide-react';
 import type { InstalledAsset } from '@/types/assets';
@@ -51,6 +51,7 @@ const ASSET_META: Record<string, TileMeta> = {
   'shared-media':          { to: '/shared',          icon: Link2,            tint: '195 80% 65%' },
   'birthdays-milestones':  { to: '/celebrations',    icon: Cake,             tint: '14 90% 60%' },
   'narrative-rpg':         { to: '/narrative',       icon: Sparkles,         tint: '270 70% 65%' },
+  'workout-competition':   { to: '/workouts',        icon: Dumbbell,         tint: '15 90% 58%' },
 };
 
 const TONE_DOT: Record<AssetStatusTone, string | null> = {

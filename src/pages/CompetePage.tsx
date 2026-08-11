@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Trophy, BarChart3, MessageCircle, Bookmark, ChevronRight, Lock, Shield,
-  Swords, TrendingUp, VenetianMask,
+  Swords, TrendingUp, VenetianMask, Dumbbell,
 } from 'lucide-react';
 import { useClub } from '@/contexts/ClubContext';
 import * as readshiftApi from '@/lib/readshift/api';
@@ -20,6 +20,58 @@ import runedelveEmblem from '@/assets/runedelve-emblem.png';
 import nexusEmblem from '@/assets/nexus-emblem.png';
 import pickemEmblem from '@/assets/pickem-emblem.png';
 import draftEmblem from '@/assets/draft-emblem.png';
+
+/* ── Workout Arena card ── */
+function WorkoutArenaCompeteCard() {
+  const { club } = useClub();
+  const [week, setWeek] = useState<{ title: string; ends_at: string } | null>(null);
+  useEffect(() => {
+    if (!club?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('workout_weeks').select('title, ends_at')
+        .eq('club_id', club.id).eq('status', 'active')
+        .order('starts_at', { ascending: false }).limit(1);
+      if (!cancelled) setWeek(data?.[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [club?.id]);
+
+  const remaining = week ? Math.max(0, new Date(week.ends_at).getTime() - Date.now()) : 0;
+  const days = Math.floor(remaining / 86400000);
+  const hours = Math.floor((remaining % 86400000) / 3600000);
+  const context = week
+    ? `${week.title}${remaining > 0 ? ` · ${days > 0 ? `${days}d ${hours}h` : `${hours}h`} left` : ''}`
+    : 'No active week — check back soon';
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+      <div className="glass-card p-4 relative overflow-hidden border border-primary/10">
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, hsl(var(--primary) / 0.2), hsl(var(--primary) / 0.05))' }}>
+              <Dumbbell className="w-5 h-5" style={{ color: 'hsl(var(--primary))' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-[15px] tracking-tight">Workout Arena</h2>
+                <StatusPill variant={week ? 'live' : 'neutral'} size="xs" dot={!!week} pulse={!!week}>{week ? 'Live' : 'Weekly'}</StatusPill>
+              </div>
+              <p className="text-[11px] text-muted-foreground/70 truncate">{context}</p>
+            </div>
+          </div>
+          <Link to="/workouts" className="block">
+            <button className="w-full h-8 rounded-lg bg-primary/12 text-primary text-[11px] font-bold hover:bg-primary/15 transition-colors flex items-center justify-center gap-1.5">
+              {week ? 'Log a workout' : 'Open'} <ChevronRight className="w-3 h-3" />
+            </button>
+          </Link>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 /* ── Lockbox card ── */
 function LockboxCompeteCard() {
@@ -549,6 +601,7 @@ export default function CompetePage() {
           {isInstalled('nfl-pickem') && <PickemCompeteCard />}
           {isInstalled('portfolio-wars') && <PortfolioWarsCompeteCard />}
           {isInstalled('readshift') && <ReadshiftCompeteCard />}
+          {isInstalled('workout-competition') && <WorkoutArenaCompeteCard />}
           {isInstalled('lockbox') && <LockboxCompeteCard />}
 
           {/* Community activities */}
