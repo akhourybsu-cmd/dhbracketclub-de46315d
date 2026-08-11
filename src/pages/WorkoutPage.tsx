@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Dumbbell, Settings, Trophy, ChevronRight, Flame, Timer, Play } from 'lucide-react';
+import { Dumbbell, Settings, Trophy, ChevronRight, Flame, Timer, Play, Medal } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,9 +11,13 @@ import { useWorkoutArena } from '@/hooks/useWorkoutArena';
 import { WorkoutLoggerSheet } from '@/components/workout/WorkoutLoggerSheet';
 import {
   buildLeaderboard, computeExerciseProgress, userWeekScore,
-  lifetimeXp, levelFromXp, computeStreak,
+  lifetimeXp, levelFromXp, computeStreak, computeRecords, computeMilestones,
 } from '@/lib/workout/scoring';
-import { formatValueShort, goalUnitLabel, MEASUREMENT_META } from '@/lib/workout/measurement';
+import { formatValue, formatValueShort, goalUnitLabel, MEASUREMENT_META } from '@/lib/workout/measurement';
+import {
+  evaluateAchievements, ACHIEVEMENTS_BY_KEY, ACHIEVEMENTS,
+  type AchievementContext,
+} from '@/lib/workout/achievements';
 import type { WeekExerciseWithDef, WorkoutExercise } from '@/lib/workout/types';
 
 function timeRemaining(endsAt: string): string {
@@ -39,8 +43,8 @@ export default function WorkoutPage() {
   const installed = isInstalled('workout-competition');
 
   const {
-    week, weekExercises, weekActivities, myActivities, members, loading, error,
-    logActivity, undoLast,
+    week, weekExercises, weekActivities, myActivities, members, unlocks, pastWeeks, loading, error,
+    logActivity, undoLast, insertUnlock,
   } = useWorkoutArena(club?.id, user?.id);
 
   const [selected, setSelected] = useState<WeekExerciseWithDef | null>(null);
@@ -72,11 +76,42 @@ export default function WorkoutPage() {
   }, [weekExercises]);
   const myXp = useMemo(() => lifetimeXp(exercisesById, myActivities), [exercisesById, myActivities]);
   const level = useMemo(() => levelFromXp(myXp), [myXp]);
-  const streak = useMemo(() => {
+  const todayLocal = useMemo(() => {
     const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return computeStreak(myActivities.map(a => a.activity_local_date), today);
-  }, [myActivities]);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+  const streak = useMemo(
+    () => computeStreak(myActivities.map(a => a.activity_local_date), todayLocal),
+    [myActivities, todayLocal],
+  );
+
+  // Achievement detection + restrained celebration. Criteria are evaluated
+  // from authoritative activity; unlocks persist so we never re-celebrate.
+  const celebratedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (loading) return;
+    const ctx: AchievementContext = {
+      lifetime: myActivities,
+      weekActivities: myWeekActivities,
+      weekExercises,
+      week,
+      todayLocal,
+    };
+    const satisfied = evaluateAchievements(ctx);
+    const fresh = satisfied.filter(k => !unlocks.includes(k) && !celebratedRef.current.has(k));
+    fresh.forEach(async (k) => {
+      celebratedRef.current.add(k);
+      const isNew = await insertUnlock(k);
+      if (!isNew) return;
+      const def = ACHIEVEMENTS_BY_KEY[k];
+      if (!def) return;
+      const emoji = def.tier === 'gold' ? '🏆' : def.tier === 'silver' ? '🥈' : '🎖️';
+      toast.success(`${emoji} ${def.title}`, {
+        description: def.description,
+        duration: def.tier === 'gold' ? 6000 : 4000,
+      });
+    });
+  }, [loading, myActivities, myWeekActivities, weekExercises, week, unlocks, todayLocal, insertUnlock]);
 
   // ─── Guards ───────────────────────────────────────────────────────
   if (!assetsLoading && !installed) return <Navigate to="/dashboard" replace />;
@@ -86,6 +121,17 @@ export default function WorkoutPage() {
   const personalBestFor = (exerciseId: string) => {
     const vals = myActivities.filter(a => a.exercise_id === exerciseId).map(a => Number(a.raw_value));
     return vals.length ? Math.max(...vals) : null;
+  };
+  const recordsFor = (ex: WorkoutExercise) =>
+    computeRecords(ex, myActivities).map(s => ({ label: s.label, value: formatValue(ex.measurement_type, s.value) }));
+  const nextMilestoneFor = (ex: WorkoutExercise): string | null => {
+    const acts = myActivities.filter(a => a.exercise_id === ex.id);
+    const lifetime = acts.reduce((t, a) => t + Number(a.raw_value), 0);
+    const best = acts.length ? Math.max(...acts.map(a => Number(a.raw_value))) : 0;
+    const m = computeMilestones(ex.milestone_config, lifetime, best);
+    const isTime = MEASUREMENT_META[ex.measurement_type].isTime;
+    const next = isTime ? (m.nextSession ?? m.nextLifetime) : (m.nextLifetime ?? m.nextSession);
+    return next != null ? formatValue(ex.measurement_type, next) : null;
   };
 
   const quickLog = async (we: WeekExerciseWithDef, amount: number) => {
@@ -270,11 +316,49 @@ export default function WorkoutPage() {
         )}
       </div>
 
+      {/* Badges (unlocked achievements) */}
+      {unlocks.length > 0 && (
+        <div className="mt-5">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="section-header mb-0">Badges</h3>
+            <span className="text-[11px] font-bold text-muted-foreground/55 tabular-nums">{unlocks.length}/{ACHIEVEMENTS.length}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ACHIEVEMENTS.filter(a => unlocks.includes(a.key)).map(a => (
+              <div key={a.key} className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-primary/10 text-primary text-[12px] font-bold" title={a.description}>
+                <Medal className="w-3.5 h-3.5" /> {a.title}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent completed weeks → recap */}
+      {pastWeeks.length > 0 && (
+        <div className="mt-5">
+          <h3 className="section-header mb-2">Recent weeks</h3>
+          <div className="glass-card overflow-hidden divide-y divide-border/10">
+            {pastWeeks.map(w => (
+              <Link key={w.id} to={`/workouts/recap/${w.id}`} className="flex items-center gap-3 px-3.5 py-3 hover:bg-muted/20 transition-colors">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-muted/40 text-muted-foreground/70"><Trophy className="w-4 h-4" /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-bold truncate">{w.title}</p>
+                  <p className="text-[10px] text-muted-foreground/55">{new Date(w.ends_at).toLocaleDateString()}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       <WorkoutLoggerSheet
         exercise={selected?.exercise ?? null}
         goal={selected ? (selected.goal ?? selected.exercise.default_weekly_goal ?? null) : null}
         weekTotal={selected ? weekTotalFor(selected.exercise.id) : 0}
         personalBest={selected ? personalBestFor(selected.exercise.id) : null}
+        records={selected ? recordsFor(selected.exercise) : undefined}
+        nextMilestone={selected ? nextMilestoneFor(selected.exercise) : null}
         canUndo={selected ? weekTotalFor(selected.exercise.id) > 0 : false}
         onClose={() => setSelected(null)}
         onLog={async (rawValue, opts) => {

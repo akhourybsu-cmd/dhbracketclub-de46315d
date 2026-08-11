@@ -11,12 +11,14 @@ import type { WorkoutExercise } from '@/lib/workout/types';
  * the DH bottom-sheet convention.
  */
 export function WorkoutLoggerSheet({
-  exercise, goal, weekTotal, personalBest, onClose, onLog, onUndo, canUndo,
+  exercise, goal, weekTotal, personalBest, records, nextMilestone, onClose, onLog, onUndo, canUndo,
 }: {
   exercise: WorkoutExercise | null;
   goal: number | null;
   weekTotal: number;
   personalBest?: number | null;
+  records?: { label: string; value: string }[];
+  nextMilestone?: string | null;
   onClose: () => void;
   onLog: (rawValue: number, opts?: LoggerLogOpts) => Promise<unknown> | void;
   onUndo?: () => Promise<unknown> | void;
@@ -63,6 +65,26 @@ export function WorkoutLoggerSheet({
                 onUndo={onUndo}
                 canUndo={canUndo}
               />
+
+              {(records?.length || nextMilestone) && (
+                <div className="mt-5 pt-4 border-t border-border/10">
+                  {records && records.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {records.slice(0, 3).map(r => (
+                        <div key={r.label} className="rounded-xl bg-muted/25 px-2 py-2 text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">{r.label}</p>
+                          <p className="text-[15px] font-black tabular-nums mt-0.5">{r.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {nextMilestone && (
+                    <p className="text-[12px] text-center text-muted-foreground/70">
+                      Next milestone: <span className="font-extrabold text-foreground/85">{nextMilestone}</span>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         </motion.div>

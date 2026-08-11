@@ -35,6 +35,8 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
   const [weekActivities, setWeekActivities] = useState<WorkoutActivity[]>([]);
   const [myActivities, setMyActivities] = useState<WorkoutActivity[]>([]);
   const [members, setMembers] = useState<WorkoutMember[]>([]);
+  const [unlocks, setUnlocks] = useState<string[]>([]);
+  const [pastWeeks, setPastWeeks] = useState<WorkoutWeek[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,7 +73,7 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
       }
       setWeek(activeWeek);
 
-      const [{ data: memberRows }, weekBundle, { data: mine }] = await withTimeout(
+      const [{ data: memberRows }, weekBundle, { data: mine }, { data: unlockRows }, { data: pastRows }] = await withTimeout(
         Promise.all([
           withTimeout(
             sb.from('club_members').select('user_id, profiles:user_id(id, display_name, avatar_url)').eq('club_id', clubId),
@@ -87,14 +89,24 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
             sb.from('workout_activities').select('*').eq('user_id', userId).eq('status', 'active').order('logged_at', { ascending: false }).limit(1000),
             QUERY_TIMEOUT_MS, 'workout my activity',
           ),
+          withTimeout(
+            sb.from('workout_achievement_unlocks').select('achievement_key').eq('club_id', clubId).eq('user_id', userId),
+            QUERY_TIMEOUT_MS, 'workout unlocks',
+          ),
+          withTimeout(
+            sb.from('workout_weeks').select('*').eq('club_id', clubId).eq('status', 'completed').order('ends_at', { ascending: false }).limit(6),
+            QUERY_TIMEOUT_MS, 'workout past weeks',
+          ),
         ]),
         HYDRATE_TIMEOUT_MS, 'workout arena hydrate',
-      );
+      ) as any;
 
       const [{ data: weRows }, { data: actRows }] = weekBundle as any;
       setWeekExercises((weRows || []).filter((r: any) => r.exercise) as WeekExerciseWithDef[]);
       setWeekActivities((actRows || []) as WorkoutActivity[]);
       setMyActivities((mine || []) as WorkoutActivity[]);
+      setUnlocks(((unlockRows || []) as any[]).map(r => r.achievement_key));
+      setPastWeeks((pastRows || []) as WorkoutWeek[]);
       setMembers(
         (memberRows || [])
           .map((r: any) => r.profiles)
@@ -195,9 +207,26 @@ export function useWorkoutArena(clubId: string | undefined, userId: string | und
     }
   }, [weekActivities, myActivities, userId]);
 
+  /** Persist an achievement unlock (idempotent via the unique index).
+   *  Returns true if this was a genuinely new unlock for the user. */
+  const insertUnlock = useCallback(async (key: string): Promise<boolean> => {
+    if (!clubId || !userId) return false;
+    if (unlocks.includes(key)) return false;
+    setUnlocks(prev => prev.includes(key) ? prev : [...prev, key]);
+    const { error: e } = await sb.from('workout_achievement_unlocks')
+      .insert({ club_id: clubId, user_id: userId, achievement_key: key });
+    // A duplicate (already unlocked elsewhere) is fine — treat as not-new.
+    if (e && !String(e.message || '').toLowerCase().includes('duplicate')) {
+      setUnlocks(prev => prev.filter(k => k !== key));
+      return false;
+    }
+    return !e;
+  }, [clubId, userId, unlocks]);
+
   return {
     week, weekExercises, weekActivities, myActivities, members, exercisesById,
-    loading, error, refresh, logActivity, undoLast,
+    unlocks, pastWeeks,
+    loading, error, refresh, logActivity, undoLast, insertUnlock,
     localToday,
   };
 }
