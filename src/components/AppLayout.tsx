@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClub } from '@/contexts/ClubContext';
 import { AppDrawer } from '@/components/AppDrawer';
+import { BottomTabBar } from '@/components/BottomTabBar';
 import { NavDrawerProvider, useNavDrawer } from '@/contexts/NavDrawerContext';
 import { useClubAssets } from '@/hooks/useClubAssets';
 
@@ -215,6 +216,11 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
       {/* Drawer */}
       <AppDrawer open={drawerOpen} onOpenChange={setDrawerOpen} unreadChatCount={unreadChatCount} />
 
+      {/* Mobile bottom tab bar — portaled to <body>, so it stays pinned to the
+          viewport bottom on every route (never trapped inside PageTransition's
+          transform). Hidden inside game shells and chat, which own the viewport. */}
+      {showMobileHeader && <BottomTabBar unreadChatCount={unreadChatCount} />}
+
       {/* Main Content */}
       <main className={cn(
         "flex-1 overflow-x-hidden min-w-0",
@@ -236,7 +242,12 @@ function AppLayoutInner({ children }: { children: ReactNode }) {
           // Long-form reading pages (Lore article detail, etc.) re-apply
           // a narrower cap at the page root via `lg:max-w-[760px]
           // lg:mx-auto` so prose stays readable.
-          <div className="max-w-[640px] lg:max-w-[1280px] mx-auto px-4 sm:px-5 py-5 sm:py-6 lg:py-8 min-w-0">
+          <div className={cn(
+            "max-w-[640px] lg:max-w-[1280px] mx-auto px-4 sm:px-5 pt-5 sm:pt-6 lg:pt-8 min-w-0",
+            // Clearance for the mobile bottom tab bar (~56px + safe area) so the
+            // last items aren't hidden behind it. Desktop has no bar → normal pad.
+            showMobileHeader ? "pb-24 lg:pb-8" : "pb-5 sm:pb-6 lg:pb-8",
+          )}>
             {children}
           </div>
         )}
