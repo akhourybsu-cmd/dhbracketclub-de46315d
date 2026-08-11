@@ -11,6 +11,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { useActivityFeedUpdates } from '@/hooks/useRealtimeSubscription';
+import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 
 const FEED_ICONS: Record<string, { icon: any; color: string }> = {
   ranking_created: { icon: BarChart3, color: 'accent' },
@@ -188,9 +189,9 @@ export default function FeedPage() {
               <FileText className="w-3.5 h-3.5 inline-block mr-1.5 text-primary/80" />
               Discussions
             </h2>
-            <div className="space-y-2">
-              {posts.filter(p => !p.is_pinned).slice(0, 5).map((post, i) => (
-                <motion.div key={post.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+            <Stagger className="space-y-2">
+              {posts.filter(p => !p.is_pinned).slice(0, 5).map((post) => (
+                <StaggerItem key={post.id}>
                   <Link to={`/posts/${post.id}`} className="block group">
                     <div className="glass-card p-3.5 transition-all duration-200 group-hover:border-primary/15">
                       <div className="relative z-10">
@@ -203,9 +204,9 @@ export default function FeedPage() {
                       </div>
                     </div>
                   </Link>
-                </motion.div>
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           </div>
         )}
 
@@ -220,8 +221,8 @@ export default function FeedPage() {
             <Zap className="w-3.5 h-3.5 inline-block mr-1.5 text-primary/80" />
             Activity
           </h2>
-          <div className="space-y-1">
-            {activity.map((item, i) => {
+          <Stagger className="space-y-1">
+            {activity.map((item) => {
               const iconConfig = FEED_ICONS[item.event_type] || { icon: Zap, color: 'primary' };
               const Icon = iconConfig.icon;
               const label = FEED_LABELS[item.event_type] || item.event_type;
@@ -249,12 +250,12 @@ export default function FeedPage() {
               );
 
               return (
-                <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}>
+                <StaggerItem key={item.id}>
                   {link ? <Link to={link} className="block">{content}</Link> : content}
-                </motion.div>
+                </StaggerItem>
               );
             })}
-          </div>
+          </Stagger>
 
           {activity.length === 0 && posts.length === 0 && !loading && (
             <div className="text-center py-16">

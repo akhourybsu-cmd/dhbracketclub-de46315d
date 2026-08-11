@@ -4,6 +4,8 @@ import { VenetianMask, Plus, ChevronRight, Users } from 'lucide-react';
 import { useClub } from '@/contexts/ClubContext';
 import { useReadshiftGames } from '@/hooks/useReadshift';
 import { StatusPill } from '@/components/ui/status-pill';
+import { Stagger, StaggerItem } from '@/components/motion/Stagger';
+import { LoadingSwap } from '@/components/motion/LoadingSwap';
 import type { RsGame } from '@/lib/readshift/dbTypes';
 import type { Phase } from '@/lib/readshift/types';
 
@@ -68,35 +70,40 @@ export default function ReadshiftListPage() {
           </button>
         </Link>
 
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="glass-card p-4"><div className="h-4 w-1/3 rounded skeleton-shimmer mb-2" /><div className="h-3 w-1/2 rounded skeleton-shimmer" /></div>
-            ))}
-          </div>
-        ) : games.length === 0 ? (
-          <div className="glass-card p-8 text-center">
-            <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
-              <Users className="w-6 h-6" style={{ color: 'hsl(var(--primary))' }} />
+        <LoadingSwap
+          loading={loading}
+          skeleton={
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="glass-card p-4"><div className="h-4 w-1/3 rounded skeleton-shimmer mb-2" /><div className="h-3 w-1/2 rounded skeleton-shimmer" /></div>
+              ))}
             </div>
-            <p className="text-sm font-bold mb-1">No games yet</p>
-            <p className="text-[12px] text-muted-foreground/70">Create a game and invite 4+ friends to start reading each other.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {active.length > 0 && (
-              <div className="space-y-3">
-                {active.map((g) => <GameRow key={g.id} g={g} />)}
+          }
+        >
+          {games.length === 0 ? (
+            <div className="glass-card p-8 text-center">
+              <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
+                <Users className="w-6 h-6" style={{ color: 'hsl(var(--primary))' }} />
               </div>
-            )}
-            {past.length > 0 && (
-              <div>
-                <h2 className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-muted-foreground/60 mb-2">History</h2>
-                <div className="space-y-3">{past.map((g) => <GameRow key={g.id} g={g} />)}</div>
-              </div>
-            )}
-          </div>
-        )}
+              <p className="text-sm font-bold mb-1">No games yet</p>
+              <p className="text-[12px] text-muted-foreground/70">Create a game and invite 4+ friends to start reading each other.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {active.length > 0 && (
+                <Stagger className="space-y-3">
+                  {active.map((g) => <StaggerItem key={g.id}><GameRow g={g} /></StaggerItem>)}
+                </Stagger>
+              )}
+              {past.length > 0 && (
+                <div>
+                  <h2 className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-muted-foreground/60 mb-2">History</h2>
+                  <Stagger className="space-y-3">{past.map((g) => <StaggerItem key={g.id}><GameRow g={g} /></StaggerItem>)}</Stagger>
+                </div>
+              )}
+            </div>
+          )}
+        </LoadingSwap>
       </motion.div>
     </div>
   );
